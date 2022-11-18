@@ -521,8 +521,9 @@ func (b *builder) internalImageURL(name string, useDigest bool) string {
 	if url := os.Getenv(envvar); len(url) != 0 {
 		return url
 	}
-	image := b.imageOrg + "/" + name + ":" + b.version
+
 	if !useDigest {
+		image := b.imageOrg + "/" + name + ":" + b.version
 		return image
 	}
 
@@ -531,7 +532,8 @@ func (b *builder) internalImageURL(name string, useDigest bool) string {
 		panic(err)
 	}
 
-	return b.imageOrg + "/" + name + "@" + string(digest)
+	image := b.imageOrg + "/" + name + "@" + string(digest)
+	return image
 }
 
 // Development
@@ -641,42 +643,72 @@ func templatePackageOperatorManager(scheme *k8sruntime.Scheme) (deploy *appsv1.D
 		return nil, fmt.Errorf("loading package-operator-manager deployment.yaml.tpl: %w", err)
 	}
 
-	return patchPackageOperatorManager(scheme, &objs[0])
+	return patchDeployment(scheme, &objs[0], "package-operator-manager", "manager")
 }
 
-func patchPackageOperatorManager(scheme *k8sruntime.Scheme, obj *unstructured.Unstructured) (deploy *appsv1.Deployment, err error) {
-	// Replace image
-	packageOperatorDeployment := &appsv1.Deployment{}
+// Replaces `container`'s image. If it is the packager operator manager,
+//the `PKO_IMAGE` environment variable is also replaced with that image.
+func patchDeployment(scheme *k8sruntime.Scheme, obj *unstructured.Unstructured, name string, container string) (deploy *appsv1.Deployment, err error) {
+	deployment := &appsv1.Deployment{}
 	if err := scheme.Convert(
-		obj, packageOperatorDeployment, nil); err != nil {
+		obj, deployment, nil); err != nil {
 		return nil, fmt.Errorf("converting to Deployment: %w", err)
 	}
 
-	var packageOperatorManagerImage string
-	if len(os.Getenv("USE_DIGESTS")) > 0 {
-		mg.Deps(
-			mg.F(Builder.Push, "package-operator-manager"), // to use digests the image needs to be pushed to a registry first.
-		)
-		packageOperatorManagerImage = Builder.imageURLWithDigest("package-operator-manager")
+	image := getImageName(name)
+
+	if name == "package-operator-manager" {
+		replaceImageAndEnvVar(deployment, image, container, "PKO_IMAGE")
 	} else {
-		packageOperatorManagerImage = Builder.imageURL("package-operator-manager")
+		replaceImage(deployment, image, container)
 	}
-	for i := range packageOperatorDeployment.Spec.Template.Spec.Containers {
-		container := &packageOperatorDeployment.Spec.Template.Spec.Containers[i]
+
+	return deployment, nil
+}
+
+func getImageName(name string) string {
+	envVar := strings.ToUpper(name) + "_IMAGE"
+
+	var image string
+	if len(os.Getenv(envVar)) > 0 { // TODO: Should this take precedence?
+		image = os.Getenv(envVar)
+	} else if len(os.Getenv("USE_DIGESTS")) > 0 {
+		mg.Deps(
+			mg.F(Builder.Push, name), // to use digests the image needs to be pushed to a registry first.
+		)
+		image = Builder.imageURLWithDigest(name)
+	} else {
+		image = Builder.imageURL(name)
+	}
+	return image
+}
+
+func replaceImage(deployment *appsv1.Deployment, image string, container string) {
+	for i := range deployment.Spec.Template.Spec.Containers {
+		container := &deployment.Spec.Template.Spec.Containers[i]
 
 		switch container.Name {
-		case "manager":
-			container.Image = packageOperatorManagerImage
+		case container:
+			container.Image = image
+		}
+	}
+}
 
+func replaceImageAndEnvVar(deployment *appsv1.Deployment, image string, container string, envVar string) {
+	for i := range deployment.Spec.Template.Spec.Containers {
+		container := &deployment.Spec.Template.Spec.Containers[i]
+
+		switch container.Name {
+		case container:
+			container.Image = image
 			for j := range container.Env {
 				env := &container.Env[j]
-				if env.Name == "PKO_IMAGE" {
-					env.Value = packageOperatorManagerImage
+				if env.Name == envVar {
+					env.Value = image
 				}
 			}
 		}
 	}
-	return packageOperatorDeployment, nil
 }
 
 // Package Operator Webhook server from local files.
@@ -688,22 +720,9 @@ func (d Dev) deployPackageOperatorWebhook(ctx context.Context, cluster *dev.Clus
 	}
 
 	// Replace image
-	packageOperatorWebhookDeployment := &appsv1.Deployment{}
-	if err := cluster.Scheme.Convert(
-		&objs[0], packageOperatorWebhookDeployment, nil); err != nil {
-		return fmt.Errorf("converting to Deployment: %w", err)
-	}
-	packageOperatorWebhookImage := os.Getenv("PACKAGE_OPERATOR_WEBHOOK_IMAGE")
-	if len(packageOperatorWebhookImage) == 0 {
-		packageOperatorWebhookImage = Builder.imageURL("package-operator-webhook")
-	}
-	for i := range packageOperatorWebhookDeployment.Spec.Template.Spec.Containers {
-		container := &packageOperatorWebhookDeployment.Spec.Template.Spec.Containers[i]
-
-		switch container.Name {
-		case "webhook":
-			container.Image = packageOperatorWebhookImage
-		}
+	deployment, err := patchDeployment(cluster.Scheme, objs[0], "package-operator-webhook", "webhook")
+	if err != nil {
+		return fmt.Errorf("patching image: %w", err)
 	}
 
 	ctx = logr.NewContext(ctx, logger)
@@ -719,8 +738,8 @@ func (d Dev) deployPackageOperatorWebhook(ctx context.Context, cluster *dev.Clus
 	}); err != nil {
 		return fmt.Errorf("deploy package-operator-webhook dependencies: %w", err)
 	}
-	_ = cluster.CtrlClient.Delete(ctx, packageOperatorWebhookDeployment)
-	if err := cluster.CreateAndWaitForReadiness(ctx, packageOperatorWebhookDeployment); err != nil {
+	_ = cluster.CtrlClient.Delete(ctx, deployment)
+	if err := cluster.CreateAndWaitForReadiness(ctx, deployment); err != nil {
 		return fmt.Errorf("deploy package-operator-webhook: %w", err)
 	}
 	return nil
@@ -735,24 +754,10 @@ func (d Dev) deployRemotePhaseManager(ctx context.Context, cluster *dev.Cluster)
 	}
 
 	// Insert new image in remote-phase-manager deployment manifest
-	remotePhaseManagerDeployment := &appsv1.Deployment{}
-	if err := cluster.Scheme.Convert(
-		&objs[0], remotePhaseManagerDeployment, nil); err != nil {
-		return fmt.Errorf("converting to Deployment: %w", err)
+	deployment, err := patchDeployment(cluster.Scheme, obj, "remote-phase-manager", "manager")
+	if err != nil {
+		return fmt.Errorf("patching deployment: %w", err)
 	}
-	packageOperatorWebhookImage := os.Getenv("REMOTE_PHASE_MANAGER_IMAGE")
-	if len(packageOperatorWebhookImage) == 0 {
-		packageOperatorWebhookImage = Builder.imageURL("remote-phase-manager")
-	}
-	for i := range remotePhaseManagerDeployment.Spec.Template.Spec.Containers {
-		container := &remotePhaseManagerDeployment.Spec.Template.Spec.Containers[i]
-
-		switch container.Name {
-		case "manager":
-			container.Image = packageOperatorWebhookImage
-		}
-	}
-
 	// Beware: CreateAndWaitFromFolders doesn't update anything
 	// Create the service accounts and related dependencies
 	if err := cluster.CreateAndWaitFromFolders(ctx, []string{
@@ -835,8 +840,8 @@ func (d Dev) deployRemotePhaseManager(ctx context.Context, cluster *dev.Cluster)
 		return fmt.Errorf("deploy kubeconfig secret: %w", err)
 	}
 	// Deploy the remote phase manager deployment
-	_ = cluster.CtrlClient.Delete(ctx, remotePhaseManagerDeployment)
-	if err := cluster.CreateAndWaitForReadiness(ctx, remotePhaseManagerDeployment); err != nil {
+	_ = cluster.CtrlClient.Delete(ctx, deployment)
+	if err := cluster.CreateAndWaitForReadiness(ctx, deployment); err != nil {
 		return fmt.Errorf("deploy remote-phase-manager: %w", err)
 	}
 	return nil
@@ -1016,21 +1021,6 @@ func (x fileInfosByName) Less(i, j int) bool {
 
 func (x fileInfosByName) Swap(i, j int) { x[i], x[j] = x[j], x[i] }
 
-// Includes all static-deployment files in the package-operator-package.
-func (Generate) PackageOperatorPackage() error {
-	return filepath.WalkDir("config/static-deployment", func(path string, d fs.DirEntry, err error) error {
-		if err != nil {
-			return err
-		}
-
-		if d.IsDir() {
-			return nil
-		}
-
-		return includeInPackageOperatorPackage(path)
-	})
-}
-
 // generates a self-bootstrap-job.yaml based on the current VERSION.
 // requires the images to have been build beforehand.
 func (Generate) SelfBootstrapJob() error {
@@ -1073,6 +1063,22 @@ func (Generate) SelfBootstrapJob() error {
 	return nil
 }
 
+// Includes all static-deployment files in the package-operator-package.
+func (Generate) PackageOperatorPackage() error {
+	return filepath.WalkDir("config/static-deployment", func(path string, d fs.DirEntry, err error) error {
+		if err != nil {
+			return err
+		}
+
+		if d.IsDir() {
+			return nil
+		}
+
+		return includeInPackageOperatorPackage(path)
+	})
+}
+
+// include in config/packages/package-operator
 func includeInPackageOperatorPackage(file string) error {
 	fileContent, err := os.ReadFile(file)
 	if err != nil {
@@ -1119,7 +1125,7 @@ func includeInPackageOperatorPackage(file string) error {
 		case schema.GroupKind{Group: "apps", Kind: "Deployment"}:
 			annotations["package-operator.run/phase"] = "deploy"
 			obj.SetAnnotations(annotations)
-			deploy, err := patchPackageOperatorManager(clientScheme.Scheme, &obj)
+			deploy, err := patchDeployment(clientScheme.Scheme, &obj, "package-operator-manager", "manager")
 			if err != nil {
 				return err
 			}

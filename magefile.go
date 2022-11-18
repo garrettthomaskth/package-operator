@@ -197,6 +197,7 @@ func (Build) Images() {
 		mg.F(Builder.Image, "package-operator-webhook"),
 		mg.F(Builder.Image, "package-operator-package"),
 		mg.F(Builder.Image, "remote-phase-manager"),
+		mg.F(Builder.Image, "remote-phase-manager-package"),
 	)
 }
 
@@ -214,6 +215,7 @@ func (Build) PushImages() {
 		mg.F(Builder.Push, "package-operator-webhook"),
 		mg.F(Builder.Push, "package-operator-package"),
 		mg.F(Builder.Push, "remote-phase-manager"),
+		mg.F(Builder.Push, "remote-phase-manager-package"),
 	)
 	mg.SerialDeps(
 		Generate.SelfBootstrapJob,
@@ -432,6 +434,10 @@ func (b *builder) buildPackageImage(packageImageName string) error {
 	if packageImageName == "package-operator-package" {
 		mg.SerialDeps(
 			Generate.PackageOperatorPackage, // inject digests into package
+		)
+	} else if packageImageName == "remote-phase-manager-package" {
+		mg.SerialDeps(
+			Generate.RemotePhaseOperatorPackage, // inject digests into package
 		)
 	}
 
@@ -685,28 +691,28 @@ func getImageName(name string) string {
 
 func replaceImage(deployment *appsv1.Deployment, image string, container string) {
 	for i := range deployment.Spec.Template.Spec.Containers {
-		container := &deployment.Spec.Template.Spec.Containers[i]
+		containerObj := &deployment.Spec.Template.Spec.Containers[i]
 
-		switch container.Name {
-		case container:
-			container.Image = image
+		if containerObj.Name == container {
+			containerObj.Image = image
+			break
 		}
 	}
 }
 
 func replaceImageAndEnvVar(deployment *appsv1.Deployment, image string, container string, envVar string) {
 	for i := range deployment.Spec.Template.Spec.Containers {
-		container := &deployment.Spec.Template.Spec.Containers[i]
+		containerObj := &deployment.Spec.Template.Spec.Containers[i]
 
-		switch container.Name {
-		case container:
-			container.Image = image
-			for j := range container.Env {
-				env := &container.Env[j]
+		if containerObj.Name == container {
+			containerObj.Image = image
+			for j := range containerObj.Env {
+				env := &containerObj.Env[j]
 				if env.Name == envVar {
 					env.Value = image
 				}
 			}
+			break
 		}
 	}
 }
@@ -720,7 +726,7 @@ func (d Dev) deployPackageOperatorWebhook(ctx context.Context, cluster *dev.Clus
 	}
 
 	// Replace image
-	deployment, err := patchDeployment(cluster.Scheme, objs[0], "package-operator-webhook", "webhook")
+	deployment, err := patchDeployment(cluster.Scheme, &objs[0], "package-operator-webhook", "webhook")
 	if err != nil {
 		return fmt.Errorf("patching image: %w", err)
 	}
@@ -754,7 +760,7 @@ func (d Dev) deployRemotePhaseManager(ctx context.Context, cluster *dev.Cluster)
 	}
 
 	// Insert new image in remote-phase-manager deployment manifest
-	deployment, err := patchDeployment(cluster.Scheme, obj, "remote-phase-manager", "manager")
+	deployment, err := patchDeployment(cluster.Scheme, &objs[0], "remote-phase-manager", "manager")
 	if err != nil {
 		return fmt.Errorf("patching deployment: %w", err)
 	}
@@ -949,7 +955,7 @@ func (Generate) installYamlFile() error {
 	return dumpManifestsFromFolder("config/static-deployment/", "install.yaml")
 }
 
-// dumpManifestsFromFolder dumps all kubernets manifests from all files
+// dumpManifestsFromFolder dumps all kubernetes manifests from all files
 // in the given folder into the output file. It does not recurse into subfolders.
 // It dumps the manifests in lexical order based on file name.
 func dumpManifestsFromFolder(folderPath string, outputPath string) error {
@@ -1168,6 +1174,45 @@ func includeInPackageOperatorPackage(file string) error {
 		if _, err := outFile.Write(yamlBytes); err != nil {
 			return err
 		}
+	}
+
+	return nil
+}
+
+// Includes all static-deployment files in the package-operator-package.
+func (Generate) RemotePhaseOperatorPackage() error {
+	objs, err := dev.LoadKubernetesObjectsFromFile(
+		"config/remote-phase-static-deployment/deployment.yaml.tpl")
+	if err != nil {
+		return fmt.Errorf("loading package-operator-webhook deployment.yaml.tpl: %w", err)
+	}
+
+	// Insert new image in remote-phase-manager deployment manifest
+	deployment, err := patchDeployment(clientScheme.Scheme, &objs[0], "remote-phase-manager", "manager")
+	if err != nil {
+		return fmt.Errorf("patching deployment: %w", err)
+	}
+
+	annotations := deployment.GetAnnotations()
+	if annotations == nil {
+		annotations = map[string]string{}
+	}
+	annotations["package-operator.run/phase"] = "deploy"
+	deployment.SetAnnotations(annotations)
+
+	outFile, err := os.Create("config/packages/remote-phase-manager/remote-phase-manager.Deployment.yaml")
+	if err != nil {
+		return fmt.Errorf("creating output file: %w", err)
+	}
+	defer outFile.Close()
+
+	yamlBytes, err := yaml.Marshal(deployment)
+	if err != nil {
+		return err
+	}
+
+	if _, err := outFile.Write(yamlBytes); err != nil {
+		return err
 	}
 
 	return nil

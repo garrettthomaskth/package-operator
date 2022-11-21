@@ -12,6 +12,8 @@ import (
 	"strings"
 	"time"
 
+	"package-operator.run/package-operator/internal/controllers/hostedclusters"
+
 	"package-operator.run/package-operator/internal/metrics"
 
 	"github.com/go-logr/logr"
@@ -39,16 +41,17 @@ import (
 )
 
 type opts struct {
-	metricsAddr          string
-	pprofAddr            string
-	namespace            string
-	managerImage         string
-	selfBootstrap        string
-	enableLeaderElection bool
-	probeAddr            string
-	printVersion         bool
-	copyTo               string
-	loadPackage          string
+	metricsAddr                         string
+	pprofAddr                           string
+	namespace                           string
+	managerImage                        string
+	selfBootstrap                       string
+	enableLeaderElection                bool
+	probeAddr                           string
+	printVersion                        bool
+	copyTo                              string
+	loadPackage                         string
+	enableRemotePhaseManagerDeployments bool
 }
 
 func main() {
@@ -71,6 +74,9 @@ func main() {
 	flag.StringVar(&opts.loadPackage, "load-package", "", "(internal) runs the package-loader sub-component to load a package mounted at /package")
 	flag.StringVar(&opts.selfBootstrap, "self-bootstrap", "",
 		"(internal) bootstraps Package Operator with Package Operator using the given Package Operator Package Image")
+	flag.BoolVar(&opts.enableRemotePhaseManagerDeployments, "enable-remote-phase-manager-deployments", false,
+		"Enabling this will start an additional controller that deploys a remote phase manager package"+
+			"for every hosted cluster object") // TODO: maybe the default value should be to check whether there is a image for the remote phase manager package in the envars
 	flag.Parse()
 
 	ctrl.SetLogger(zap.New(zap.UseDevMode(true)))
@@ -272,37 +278,37 @@ func runManager(log logr.Logger, scheme *runtime.Scheme, opts opts) error {
 		})
 
 	// ObjectSet
-	if err = (objectsets.NewObjectSetController(
+	if err = objectsets.NewObjectSetController(
 		mgr.GetClient(),
 		ctrl.Log.WithName("controllers").WithName("ObjectSet"),
 		mgr.GetScheme(), dc, recorder,
 		mgr.GetRESTMapper(),
-	).SetupWithManager(mgr)); err != nil {
+	).SetupWithManager(mgr); err != nil {
 		return fmt.Errorf("unable to create controller for ObjectSet: %w", err)
 	}
-	if err = (objectsets.NewClusterObjectSetController(
+	if err = objectsets.NewClusterObjectSetController(
 		mgr.GetClient(),
 		ctrl.Log.WithName("controllers").WithName("ClusterObjectSet"),
 		mgr.GetScheme(), dc, recorder,
 		mgr.GetRESTMapper(),
-	).SetupWithManager(mgr)); err != nil {
+	).SetupWithManager(mgr); err != nil {
 		return fmt.Errorf("unable to create controller for ClusterObjectSet: %w", err)
 	}
 
 	// ObjectSetPhase for "default" class
 	const defaultObjectSetPhaseClass = "default"
-	if err = (objectsetphases.NewSameClusterObjectSetPhaseController(
+	if err = objectsetphases.NewSameClusterObjectSetPhaseController(
 		ctrl.Log.WithName("controllers").WithName("ObjectSetPhase"),
 		mgr.GetScheme(), dc, defaultObjectSetPhaseClass, mgr.GetClient(),
 		mgr.GetRESTMapper(),
-	).SetupWithManager(mgr)); err != nil {
+	).SetupWithManager(mgr); err != nil {
 		return fmt.Errorf("unable to create controller for ObjectSetPhase: %w", err)
 	}
-	if err = (objectsetphases.NewSameClusterClusterObjectSetPhaseController(
+	if err = objectsetphases.NewSameClusterClusterObjectSetPhaseController(
 		ctrl.Log.WithName("controllers").WithName("ClusterObjectSetPhase"),
 		mgr.GetScheme(), dc, defaultObjectSetPhaseClass, mgr.GetClient(),
 		mgr.GetRESTMapper(),
-	).SetupWithManager(mgr)); err != nil {
+	).SetupWithManager(mgr); err != nil {
 		return fmt.Errorf("unable to create controller for ClusterObjectSetPhase: %w", err)
 	}
 	// Object deployment controller
@@ -321,18 +327,26 @@ func runManager(log logr.Logger, scheme *runtime.Scheme, opts opts) error {
 		return fmt.Errorf("unable to create controller for ClusterObjectDeployment: %w", err)
 	}
 
-	if err = (packages.NewPackageController(
+	if err = packages.NewPackageController(
 		mgr.GetClient(), ctrl.Log.WithName("controllers").WithName("Package"), mgr.GetScheme(),
 		opts.namespace, opts.managerImage,
-	).SetupWithManager(mgr)); err != nil {
+	).SetupWithManager(mgr); err != nil {
 		return fmt.Errorf("unable to create controller for Package: %w", err)
 	}
 
-	if err = (packages.NewClusterPackageController(
+	if err = packages.NewClusterPackageController(
 		mgr.GetClient(), ctrl.Log.WithName("controllers").WithName("ClusterPackage"), mgr.GetScheme(),
 		opts.namespace, opts.managerImage,
-	).SetupWithManager(mgr)); err != nil {
+	).SetupWithManager(mgr); err != nil {
 		return fmt.Errorf("unable to create controller for ClusterPackage: %w", err)
+	}
+
+	if opts.enableRemotePhaseManagerDeployments {
+		if err = hostedclusters.NewHostedClusterController(
+			mgr.GetClient(), ctrl.Log.WithName("controllers").WithName("HostedCluster"), mgr.GetScheme(),
+		).SetupWithManager(mgr); err != nil {
+			return fmt.Errorf("unable to create controller for ClusterPackage: %w", err)
+		}
 	}
 
 	log.Info("starting manager")

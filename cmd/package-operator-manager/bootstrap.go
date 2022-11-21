@@ -42,7 +42,7 @@ func runBootstrap(log logr.Logger, scheme *runtime.Scheme, opts opts) error {
 		return fmt.Errorf("creating client: %w", err)
 	}
 
-	// Install CRDs or the manager wont start
+	// Install CRDs or the manager won't start
 	crdGK := schema.GroupKind{Group: "apiextensions.k8s.io", Kind: "CustomResourceDefinition"}
 	for _, phase := range res.TemplateSpec.Phases {
 		for _, obj := range phase.Objects {

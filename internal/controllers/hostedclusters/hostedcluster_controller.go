@@ -22,18 +22,18 @@ type HostedClusterController struct {
 	log              logr.Logger
 	scheme           *runtime.Scheme
 	newHostedCluster hostedClusterFactory
-	newPackage       genericPackageFactory
+	image            string
 }
 
 func NewHostedClusterController(
-	c client.Client, log logr.Logger, scheme *runtime.Scheme,
+	c client.Client, log logr.Logger, scheme *runtime.Scheme, image string,
 ) *HostedClusterController {
 	controller := &HostedClusterController{
 		client:           c,
 		log:              log,
 		scheme:           scheme,
 		newHostedCluster: newHostedCluster,
-		newPackage:       newGenericPackage,
+		image:            image,
 	}
 	return controller
 }
@@ -49,7 +49,7 @@ func (c *HostedClusterController) Reconcile(
 		return ctrl.Result{}, client.IgnoreNotFound(err)
 	}
 
-	desiredPackage := desiredPackage(hostedCluster) // , r.pkoNamespace, r.pkoImage)
+	desiredPackage := c.desiredPackage(hostedCluster)
 	// Can't use controllerutil.SetControllerReference because the HostedClusterType isn't in Scheme,
 	setControllerReference(hostedCluster.ClientObject(), desiredPackage)
 
@@ -64,7 +64,7 @@ func (c *HostedClusterController) Reconcile(
 	return ctrl.Result{}, nil
 }
 
-func desiredPackage(cluster hostedCluster) *corev1alpha1.Package {
+func (c *HostedClusterController) desiredPackage(cluster hostedCluster) *corev1alpha1.Package {
 	pkg := &corev1alpha1.Package{
 		ObjectMeta: metav1.ObjectMeta{
 			Name:      cluster.ClientObject().GetName() + "_remote_phase_manager",
@@ -74,7 +74,7 @@ func desiredPackage(cluster hostedCluster) *corev1alpha1.Package {
 			},
 		},
 		Spec: corev1alpha1.PackageSpec{
-			Image: "TODO: REPLACE", // TODO: get this in here
+			Image: c.image,
 		},
 	}
 	return pkg
@@ -104,10 +104,11 @@ func setControllerReference(owner, controlled metav1.Object) {
 
 func (c *HostedClusterController) SetupWithManager(mgr ctrl.Manager) error {
 	hostedCluster := c.newHostedCluster().ClientObject()
-	packageObj := c.newPackage(c.scheme).ClientObject()
+	// packageObj, err := c.scheme.New(corev1alpha1.GroupVersion.WithKind("Package"))
+	// Owns(packageObj.(*corev1alpha1.Package)).
 
 	return ctrl.NewControllerManagedBy(mgr).
 		For(hostedCluster).
-		Owns(packageObj).
+		Owns(&corev1alpha1.Package{}).
 		Complete(c)
 }

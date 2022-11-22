@@ -27,10 +27,8 @@ import (
 	"github.com/mt-sre/devkube/magedeps"
 	appsv1 "k8s.io/api/apps/v1"
 	corev1 "k8s.io/api/core/v1"
-	"k8s.io/apimachinery/pkg/apis/meta/v1/unstructured"
 	k8sruntime "k8s.io/apimachinery/pkg/runtime"
 	"k8s.io/apimachinery/pkg/runtime/schema"
-	clientScheme "k8s.io/client-go/kubernetes/scheme"
 	"sigs.k8s.io/controller-runtime/pkg/client"
 	"sigs.k8s.io/yaml"
 )
@@ -643,24 +641,18 @@ func (d Dev) deployPackageOperatorManager(ctx context.Context, cluster *dev.Clus
 }
 
 func templatePackageOperatorManager(scheme *k8sruntime.Scheme) (deploy *appsv1.Deployment, err error) {
-	objs, err := dev.LoadKubernetesObjectsFromFile(
-		"config/static-deployment/deployment.yaml.tpl")
+	deployment := &appsv1.Deployment{}
+	err := loadIntoObjectFromFile(scheme, "config/static-deployment/deployment.yaml.tpl", deployment)
 	if err != nil {
 		return nil, fmt.Errorf("loading package-operator-manager deployment.yaml.tpl: %w", err)
 	}
 
-	return patchDeployment(scheme, &objs[0], "package-operator-manager", "manager")
+	return patchDeployment(deployment, "package-operator-manager", "manager")
 }
 
 // Replaces `container`'s image. If it is the packager operator manager,
 //the `PKO_IMAGE` environment variable is also replaced with that image.
-func patchDeployment(scheme *k8sruntime.Scheme, obj *unstructured.Unstructured, name string, container string) (deploy *appsv1.Deployment, err error) {
-	deployment := &appsv1.Deployment{}
-	if err := scheme.Convert(
-		obj, deployment, nil); err != nil {
-		return nil, fmt.Errorf("converting to Deployment: %w", err)
-	}
-
+func patchDeployment(deployment *appsv1.Deployment, name string, container string) {
 	image := getImageName(name)
 
 	if name == "package-operator-manager" {
@@ -668,8 +660,6 @@ func patchDeployment(scheme *k8sruntime.Scheme, obj *unstructured.Unstructured, 
 	} else {
 		replaceImage(deployment, image, container)
 	}
-
-	return deployment, nil
 }
 
 func getImageName(name string) string {
@@ -717,16 +707,27 @@ func replaceImageAndEnvVar(deployment *appsv1.Deployment, image string, containe
 	}
 }
 
+func loadIntoObjectFromFile(scheme *k8sruntime.Scheme, filePath string, out interface{}) error {
+	objs, err := dev.LoadKubernetesObjectsFromFile(filePath)
+	if err != nil {
+		return fmt.Errorf("loading object from file: %w", err)
+	}
+	if err := scheme.Convert(obj, out, nil); err != nil {
+		return fmt.Errorf("converting: %w", err)
+	}
+	return nil
+}
+
 // Package Operator Webhook server from local files.
 func (d Dev) deployPackageOperatorWebhook(ctx context.Context, cluster *dev.Cluster) error {
-	objs, err := dev.LoadKubernetesObjectsFromFile(
-		"config/deploy/webhook/deployment.yaml.tpl")
+	deployment := &appsv1.Deployment{}
+	err := loadIntoObjectFromFile(scheme, "config/deploy/webhook/deployment.yaml.tpl", deployment)
 	if err != nil {
 		return fmt.Errorf("loading package-operator-webhook deployment.yaml.tpl: %w", err)
 	}
 
 	// Replace image
-	deployment, err := patchDeployment(cluster.Scheme, &objs[0], "package-operator-webhook", "webhook")
+	patchDeployment(deployment, "package-operator-webhook", "webhook")
 	if err != nil {
 		return fmt.Errorf("patching image: %w", err)
 	}
@@ -753,14 +754,14 @@ func (d Dev) deployPackageOperatorWebhook(ctx context.Context, cluster *dev.Clus
 
 // Remote phase manager from local files.
 func (d Dev) deployRemotePhaseManager(ctx context.Context, cluster *dev.Cluster) error {
-	objs, err := dev.LoadKubernetesObjectsFromFile(
-		"config/remote-phase-static-deployment/deployment.yaml.tpl")
+	deployment := &appsv1.Deployment{}
+	err := loadIntoObjectFromFile(scheme, "config/remote-phase-static-deployment/deployment.yaml.tpl", deployment)
 	if err != nil {
 		return fmt.Errorf("loading package-operator-webhook deployment.yaml.tpl: %w", err)
 	}
 
 	// Insert new image in remote-phase-manager deployment manifest
-	deployment, err := patchDeployment(cluster.Scheme, &objs[0], "remote-phase-manager", "manager")
+	patchDeployment(deployment, "remote-phase-manager", "manager")
 	if err != nil {
 		return fmt.Errorf("patching deployment: %w", err)
 	}
@@ -825,14 +826,9 @@ func (d Dev) deployRemotePhaseManager(ctx context.Context, cluster *dev.Cluster)
 
 	// Create a new secret for the kubeconfig
 	secret := &corev1.Secret{}
-	objs, err = dev.LoadKubernetesObjectsFromFile(
-		"config/remote-phase-static-deployment/2-secret.yaml.tpl")
+	err = loadIntoObjectFromFile(scheme, "config/remote-phase-static-deployment/2-secret.yaml.tpl", secret)
 	if err != nil {
 		return fmt.Errorf("loading package-operator-webhook 2-secret.yaml.tpl: %w", err)
-	}
-	if err := cluster.Scheme.Convert(
-		&objs[0], secret, nil); err != nil {
-		return fmt.Errorf("converting to Secret: %w", err)
 	}
 
 	// insert the new kubeconfig into the secret
@@ -1131,11 +1127,15 @@ func includeInPackageOperatorPackage(file string) error {
 		case schema.GroupKind{Group: "apps", Kind: "Deployment"}:
 			annotations["package-operator.run/phase"] = "deploy"
 			obj.SetAnnotations(annotations)
-			deploy, err := patchDeployment(clientScheme.Scheme, &obj, "package-operator-manager", "manager")
+			deploy := &appsv1.Deployment{}
+			if err := scheme.Convert(&obj, deployment, nil); err != nil {
+				return fmt.Errorf("converting to deployment: %w", err)
+			}
+			patchDeployment(deploy, "package-operator-manager", "manager")
 			if err != nil {
 				return err
 			}
-			deploy.SetGroupVersionKind(schema.GroupVersionKind{Group: "apps", Version: "v1", Kind: "Deployment"})
+			// deploy.SetGroupVersionKind(schema.GroupVersionKind{Group: "apps", Version: "v1", Kind: "Deployment"})
 			objToMarshal = deploy
 		}
 		obj.SetAnnotations(annotations)
@@ -1181,17 +1181,14 @@ func includeInPackageOperatorPackage(file string) error {
 
 // Includes all static-deployment files in the package-operator-package.
 func (Generate) RemotePhaseOperatorPackage() error {
-	objs, err := dev.LoadKubernetesObjectsFromFile(
-		"config/remote-phase-static-deployment/deployment.yaml.tpl")
+	deployment := &appsv1.Deployment{}
+	err := loadIntoObjectFromFile(clientScheme.scheme, "config/remote-phase-static-deployment/deployment.yaml.tpl", deployment)
 	if err != nil {
 		return fmt.Errorf("loading package-operator-webhook deployment.yaml.tpl: %w", err)
 	}
 
-	// Insert new image in remote-phase-manager deployment manifest
-	deployment, err := patchDeployment(clientScheme.Scheme, &objs[0], "remote-phase-manager", "manager")
-	if err != nil {
-		return fmt.Errorf("patching deployment: %w", err)
-	}
+	// Replace image
+	patchDeployment(deployment, "remote-phase-manager", "manager")
 
 	annotations := deployment.GetAnnotations()
 	if annotations == nil {

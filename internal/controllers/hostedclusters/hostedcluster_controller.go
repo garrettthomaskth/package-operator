@@ -14,7 +14,6 @@ import (
 	"sigs.k8s.io/controller-runtime/pkg/client"
 
 	corev1alpha1 "package-operator.run/apis/core/v1alpha1"
-	"package-operator.run/package-operator/internal/controllers"
 )
 
 type HostedClusterController struct {
@@ -69,9 +68,6 @@ func (c *HostedClusterController) desiredPackage(cluster hostedCluster) *corev1a
 		ObjectMeta: metav1.ObjectMeta{
 			Name:      cluster.ClientObject().GetName() + "_remote_phase_manager",
 			Namespace: cluster.ClientObject().GetNamespace(),
-			Labels: map[string]string{
-				controllers.DynamicCacheLabel: "True",
-			},
 		},
 		Spec: corev1alpha1.PackageSpec{
 			Image: c.image,
@@ -104,8 +100,6 @@ func setControllerReference(owner, controlled metav1.Object) {
 
 func (c *HostedClusterController) SetupWithManager(mgr ctrl.Manager) error {
 	hostedCluster := c.newHostedCluster().ClientObject()
-	// packageObj, err := c.scheme.New(corev1alpha1.GroupVersion.WithKind("Package"))
-	// Owns(packageObj.(*corev1alpha1.Package)).
 
 	return ctrl.NewControllerManagedBy(mgr).
 		For(hostedCluster).

@@ -714,7 +714,7 @@ func loadIntoObject(scheme *k8sruntime.Scheme, filePath string, out interface{})
 	if err != nil {
 		return fmt.Errorf("loading object from file: %w", err)
 	}
-	if err := scheme.Convert(objs[0], out, nil); err != nil {
+	if err := scheme.Convert(&objs[0], out, nil); err != nil {
 		return fmt.Errorf("converting: %w", err)
 	}
 	return nil

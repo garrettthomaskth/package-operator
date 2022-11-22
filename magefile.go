@@ -29,6 +29,7 @@ import (
 	corev1 "k8s.io/api/core/v1"
 	k8sruntime "k8s.io/apimachinery/pkg/runtime"
 	"k8s.io/apimachinery/pkg/runtime/schema"
+	clientScheme "k8s.io/client-go/kubernetes/scheme"
 	"sigs.k8s.io/controller-runtime/pkg/client"
 	"sigs.k8s.io/yaml"
 )
@@ -640,14 +641,15 @@ func (d Dev) deployPackageOperatorManager(ctx context.Context, cluster *dev.Clus
 	return nil
 }
 
-func templatePackageOperatorManager(scheme *k8sruntime.Scheme) (deploy *appsv1.Deployment, err error) {
+func templatePackageOperatorManager(scheme *k8sruntime.Scheme) (*appsv1.Deployment, error) {
 	deployment := &appsv1.Deployment{}
-	err := loadIntoObjectFromFile(scheme, "config/static-deployment/deployment.yaml.tpl", deployment)
+	err := loadIntoObject(scheme, "config/static-deployment/deployment.yaml.tpl", deployment)
 	if err != nil {
 		return nil, fmt.Errorf("loading package-operator-manager deployment.yaml.tpl: %w", err)
 	}
 
-	return patchDeployment(deployment, "package-operator-manager", "manager")
+	patchDeployment(deployment, "package-operator-manager", "manager")
+	return deployment, nil
 }
 
 // Replaces `container`'s image. If it is the packager operator manager,
@@ -707,12 +709,12 @@ func replaceImageAndEnvVar(deployment *appsv1.Deployment, image string, containe
 	}
 }
 
-func loadIntoObjectFromFile(scheme *k8sruntime.Scheme, filePath string, out interface{}) error {
+func loadIntoObject(scheme *k8sruntime.Scheme, filePath string, out interface{}) error {
 	objs, err := dev.LoadKubernetesObjectsFromFile(filePath)
 	if err != nil {
 		return fmt.Errorf("loading object from file: %w", err)
 	}
-	if err := scheme.Convert(obj, out, nil); err != nil {
+	if err := scheme.Convert(objs[0], out, nil); err != nil {
 		return fmt.Errorf("converting: %w", err)
 	}
 	return nil
@@ -721,7 +723,7 @@ func loadIntoObjectFromFile(scheme *k8sruntime.Scheme, filePath string, out inte
 // Package Operator Webhook server from local files.
 func (d Dev) deployPackageOperatorWebhook(ctx context.Context, cluster *dev.Cluster) error {
 	deployment := &appsv1.Deployment{}
-	err := loadIntoObjectFromFile(scheme, "config/deploy/webhook/deployment.yaml.tpl", deployment)
+	err := loadIntoObject(cluster.Scheme, "config/deploy/webhook/deployment.yaml.tpl", deployment)
 	if err != nil {
 		return fmt.Errorf("loading package-operator-webhook deployment.yaml.tpl: %w", err)
 	}
@@ -755,7 +757,7 @@ func (d Dev) deployPackageOperatorWebhook(ctx context.Context, cluster *dev.Clus
 // Remote phase manager from local files.
 func (d Dev) deployRemotePhaseManager(ctx context.Context, cluster *dev.Cluster) error {
 	deployment := &appsv1.Deployment{}
-	err := loadIntoObjectFromFile(scheme, "config/remote-phase-static-deployment/deployment.yaml.tpl", deployment)
+	err := loadIntoObject(cluster.Scheme, "config/remote-phase-static-deployment/deployment.yaml.tpl", deployment)
 	if err != nil {
 		return fmt.Errorf("loading package-operator-webhook deployment.yaml.tpl: %w", err)
 	}
@@ -826,7 +828,7 @@ func (d Dev) deployRemotePhaseManager(ctx context.Context, cluster *dev.Cluster)
 
 	// Create a new secret for the kubeconfig
 	secret := &corev1.Secret{}
-	err = loadIntoObjectFromFile(scheme, "config/remote-phase-static-deployment/2-secret.yaml.tpl", secret)
+	err = loadIntoObject(cluster.Scheme, "config/remote-phase-static-deployment/2-secret.yaml.tpl", secret)
 	if err != nil {
 		return fmt.Errorf("loading package-operator-webhook 2-secret.yaml.tpl: %w", err)
 	}
@@ -1128,7 +1130,7 @@ func includeInPackageOperatorPackage(file string) error {
 			annotations["package-operator.run/phase"] = "deploy"
 			obj.SetAnnotations(annotations)
 			deploy := &appsv1.Deployment{}
-			if err := scheme.Convert(&obj, deployment, nil); err != nil {
+			if err := clientScheme.Scheme.Convert(&obj, deploy, nil); err != nil {
 				return fmt.Errorf("converting to deployment: %w", err)
 			}
 			patchDeployment(deploy, "package-operator-manager", "manager")
@@ -1182,7 +1184,7 @@ func includeInPackageOperatorPackage(file string) error {
 // Includes all static-deployment files in the package-operator-package.
 func (Generate) RemotePhaseOperatorPackage() error {
 	deployment := &appsv1.Deployment{}
-	err := loadIntoObjectFromFile(clientScheme.scheme, "config/remote-phase-static-deployment/deployment.yaml.tpl", deployment)
+	err := loadIntoObject(clientScheme.Scheme, "config/remote-phase-static-deployment/deployment.yaml.tpl", deployment)
 	if err != nil {
 		return fmt.Errorf("loading package-operator-webhook deployment.yaml.tpl: %w", err)
 	}

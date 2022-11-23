@@ -12,10 +12,6 @@ import (
 	"strings"
 	"time"
 
-	"package-operator.run/package-operator/internal/controllers/hostedclusters"
-
-	"package-operator.run/package-operator/internal/metrics"
-
 	"github.com/go-logr/logr"
 	batchv1 "k8s.io/api/batch/v1"
 	"k8s.io/apimachinery/pkg/labels"
@@ -32,11 +28,13 @@ import (
 
 	pkoapis "package-operator.run/apis"
 	"package-operator.run/package-operator/internal/controllers"
+	"package-operator.run/package-operator/internal/controllers/hostedclusters"
 	"package-operator.run/package-operator/internal/controllers/objectdeployments"
 	"package-operator.run/package-operator/internal/controllers/objectsetphases"
 	"package-operator.run/package-operator/internal/controllers/objectsets"
 	"package-operator.run/package-operator/internal/controllers/packages"
 	"package-operator.run/package-operator/internal/dynamiccache"
+	"package-operator.run/package-operator/internal/metrics"
 	packageloader "package-operator.run/package-operator/internal/packages"
 )
 

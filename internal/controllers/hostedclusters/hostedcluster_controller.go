@@ -48,6 +48,22 @@ func (c *HostedClusterController) Reconcile(
 		return ctrl.Result{}, client.IgnoreNotFound(err)
 	}
 
+	// TODO: Is this right?
+	conds := hostedCluster.GetConditions()
+	ready := false
+	for _, cond := range *conds {
+		if cond.Type == "Available" {
+			if cond.Status == "True" {
+				ready = true
+				break
+			}
+			break
+		}
+	}
+	if !ready {
+		return ctrl.Result{}, nil
+	}
+
 	desiredPackage := c.desiredPackage(hostedCluster)
 	// Can't use controllerutil.SetControllerReference because the HostedClusterType isn't in Scheme,
 	setControllerReference(hostedCluster.ClientObject(), desiredPackage)

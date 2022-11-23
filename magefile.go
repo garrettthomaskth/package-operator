@@ -436,7 +436,7 @@ func (b *builder) buildPackageImage(packageImageName string) error {
 		)
 	} else if packageImageName == "remote-phase-manager-package" {
 		mg.SerialDeps(
-			Generate.RemotePhaseOperatorPackage, // inject digests into package
+			Generate.RemotePhaseManagerPackage, // inject digests into package
 		)
 	}
 
@@ -1182,7 +1182,7 @@ func includeInPackageOperatorPackage(file string) error {
 }
 
 // Includes all static-deployment files in the package-operator-package.
-func (Generate) RemotePhaseOperatorPackage() error {
+func (Generate) RemotePhaseManagerPackage() error {
 	deployment := &appsv1.Deployment{}
 	err := loadIntoObject(clientScheme.Scheme, "config/remote-phase-static-deployment/deployment.yaml.tpl", deployment)
 	if err != nil {

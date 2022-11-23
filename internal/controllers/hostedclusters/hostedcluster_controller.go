@@ -4,12 +4,12 @@ import (
 	"context"
 	"fmt"
 
+	"sigs.k8s.io/controller-runtime/pkg/controller/controllerutil"
+
 	"github.com/go-logr/logr"
 	"k8s.io/apimachinery/pkg/api/errors"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	"k8s.io/apimachinery/pkg/runtime"
-	"k8s.io/apimachinery/pkg/runtime/schema"
-	"k8s.io/utils/pointer"
 	ctrl "sigs.k8s.io/controller-runtime"
 	"sigs.k8s.io/controller-runtime/pkg/client"
 
@@ -17,22 +17,20 @@ import (
 )
 
 type HostedClusterController struct {
-	client           client.Client
-	log              logr.Logger
-	scheme           *runtime.Scheme
-	newHostedCluster hostedClusterFactory
-	image            string
+	client client.Client
+	log    logr.Logger
+	scheme *runtime.Scheme
+	image  string
 }
 
 func NewHostedClusterController(
 	c client.Client, log logr.Logger, scheme *runtime.Scheme, image string,
 ) *HostedClusterController {
 	controller := &HostedClusterController{
-		client:           c,
-		log:              log,
-		scheme:           scheme,
-		newHostedCluster: newHostedCluster,
-		image:            image,
+		client: c,
+		log:    log,
+		scheme: scheme,
+		image:  image,
 	}
 	return controller
 }
@@ -42,31 +40,26 @@ func (c *HostedClusterController) Reconcile(
 	log := c.log.WithValues("HostedCluster", req.String())
 	defer log.Info("reconciled")
 	ctx = logr.NewContext(ctx, log)
-	hostedCluster := c.newHostedCluster()
+	hostedCluster := newHostedCluster()
 	if err := c.client.Get(ctx, req.NamespacedName, hostedCluster.ClientObject()); err != nil {
 		// Ignore not found errors on delete
 		return ctrl.Result{}, client.IgnoreNotFound(err)
 	}
 
-	// TODO: Is this right?
-	conds := hostedCluster.GetConditions()
-	ready := false
-	for _, cond := range *conds {
-		if cond.Type == "Available" {
-			if cond.Status == "True" {
-				ready = true
-				break
-			}
-			break
-		}
+	conds, err := hostedCluster.GetConditions()
+	if err != nil {
+		return ctrl.Result{}, fmt.Errorf("getting hostedcluster conditions: %w", err)
 	}
-	if !ready {
+	ok := isHostedClusterReady(conds)
+	if !ok {
 		return ctrl.Result{}, nil
 	}
 
 	desiredPackage := c.desiredPackage(hostedCluster)
-	// Can't use controllerutil.SetControllerReference because the HostedClusterType isn't in Scheme,
-	setControllerReference(hostedCluster.ClientObject(), desiredPackage)
+	err = controllerutil.SetControllerReference(hostedCluster.ClientObject(), desiredPackage, c.scheme)
+	if err != nil {
+		return ctrl.Result{}, fmt.Errorf("setting controller reference: %w", err)
+	}
 
 	existingPkg := &corev1alpha1.Package{}
 	if err := c.client.Get(ctx, client.ObjectKeyFromObject(desiredPackage), existingPkg); err != nil && errors.IsNotFound(err) {
@@ -79,7 +72,21 @@ func (c *HostedClusterController) Reconcile(
 	return ctrl.Result{}, nil
 }
 
-func (c *HostedClusterController) desiredPackage(cluster hostedCluster) *corev1alpha1.Package {
+func isHostedClusterReady(conds *[]metav1.Condition) bool {
+	ready := false
+	for _, cond := range *conds {
+		// TODO: is this the condition we want to check?
+		if cond.Type == "Available" {
+			if cond.Status == "True" {
+				ready = true
+			}
+			break
+		}
+	}
+	return ready
+}
+
+func (c *HostedClusterController) desiredPackage(cluster *HostedCluster) *corev1alpha1.Package {
 	pkg := &corev1alpha1.Package{
 		ObjectMeta: metav1.ObjectMeta{
 			Name:      cluster.ClientObject().GetName() + "_remote_phase_manager",
@@ -92,30 +99,8 @@ func (c *HostedClusterController) desiredPackage(cluster hostedCluster) *corev1a
 	return pkg
 }
 
-func setControllerReference(owner, controlled metav1.Object) {
-	// Create a new controller ref.
-	gvk := schema.GroupVersionKind{
-		Group:   "hypershift.openshift.io",
-		Kind:    "HostedCluster",
-		Version: "v1alpha1",
-	}
-	ref := metav1.OwnerReference{
-		APIVersion:         gvk.GroupVersion().String(),
-		Kind:               gvk.Kind,
-		Name:               owner.GetName(),
-		UID:                owner.GetUID(),
-		BlockOwnerDeletion: pointer.Bool(true),
-		Controller:         pointer.Bool(true),
-	}
-
-	// Update owner references and return.
-	ownerRefs := controlled.GetOwnerReferences()
-	ownerRefs = append(ownerRefs, ref)
-	controlled.SetOwnerReferences(ownerRefs)
-}
-
 func (c *HostedClusterController) SetupWithManager(mgr ctrl.Manager) error {
-	hostedCluster := c.newHostedCluster().ClientObject()
+	hostedCluster := newHostedCluster().ClientObject()
 
 	return ctrl.NewControllerManagedBy(mgr).
 		For(hostedCluster).

@@ -87,6 +87,9 @@ func main() {
 	if err := pkoapis.AddToScheme(scheme); err != nil {
 		panic(err)
 	}
+	if err := hostedclusters.AddToScheme(scheme); err != nil {
+		panic(err)
+	}
 
 	if opts.printVersion {
 		version := "binary compiled without version info"

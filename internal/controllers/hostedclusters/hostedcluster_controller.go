@@ -40,41 +40,49 @@ func (c *HostedClusterController) Reconcile(
 	log := c.log.WithValues("HostedCluster", req.String())
 	defer log.Info("reconciled")
 	ctx = logr.NewContext(ctx, log)
-	hostedCluster := newHostedCluster()
-	if err := c.client.Get(ctx, req.NamespacedName, hostedCluster.ClientObject()); err != nil {
+	hostedCluster := &HostedCluster{}
+	if err := c.client.Get(ctx, req.NamespacedName, hostedCluster); err != nil {
 		// Ignore not found errors on delete
 		return ctrl.Result{}, client.IgnoreNotFound(err)
 	}
 
-	conds, err := hostedCluster.GetConditions()
-	if err != nil {
-		return ctrl.Result{}, fmt.Errorf("getting hostedcluster conditions: %w", err)
-	}
+	conds := hostedCluster.Status.Conditions
 	ok := isHostedClusterReady(conds)
 	if !ok {
 		return ctrl.Result{}, nil
 	}
 
-	desiredPackage := c.desiredPackage(hostedCluster)
-	err = controllerutil.SetControllerReference(hostedCluster.ClientObject(), desiredPackage, c.scheme)
+	desiredPkg := c.desiredPackage(hostedCluster)
+	err := controllerutil.SetControllerReference(hostedCluster, desiredPkg, c.scheme)
 	if err != nil {
 		return ctrl.Result{}, fmt.Errorf("setting controller reference: %w", err)
 	}
 
 	existingPkg := &corev1alpha1.Package{}
-	if err := c.client.Get(ctx, client.ObjectKeyFromObject(desiredPackage), existingPkg); err != nil && errors.IsNotFound(err) {
-		if err := c.client.Create(ctx, desiredPackage); err != nil {
+	if err := c.client.Get(ctx, client.ObjectKeyFromObject(desiredPkg), existingPkg); err != nil && errors.IsNotFound(err) {
+		if err := c.client.Create(ctx, desiredPkg); err != nil {
 			return ctrl.Result{}, fmt.Errorf("creating Package: %w", err)
 		}
 	} else if err != nil {
 		return ctrl.Result{}, fmt.Errorf("getting Package: %w", err)
 	}
+
+	if existingPkg.Spec.Image != desiredPkg.Spec.Image {
+		// re-create job
+		if err := c.client.Delete(ctx, existingPkg); err != nil {
+			return ctrl.Result{}, fmt.Errorf("deleting outdated Package: %w", err)
+		}
+		if err := c.client.Create(ctx, desiredPkg); err != nil {
+			return ctrl.Result{}, fmt.Errorf("creating Package: %w", err)
+		}
+	}
+
 	return ctrl.Result{}, nil
 }
 
-func isHostedClusterReady(conds *[]metav1.Condition) bool {
+func isHostedClusterReady(conds []metav1.Condition) bool {
 	ready := false
-	for _, cond := range *conds {
+	for _, cond := range conds {
 		// TODO: is this the condition we want to check?
 		if cond.Type == "Available" {
 			if cond.Status == "True" {
@@ -89,8 +97,8 @@ func isHostedClusterReady(conds *[]metav1.Condition) bool {
 func (c *HostedClusterController) desiredPackage(cluster *HostedCluster) *corev1alpha1.Package {
 	pkg := &corev1alpha1.Package{
 		ObjectMeta: metav1.ObjectMeta{
-			Name:      cluster.ClientObject().GetName() + "_remote_phase_manager",
-			Namespace: cluster.ClientObject().GetNamespace(),
+			Name:      cluster.Name + "_remote_phase_manager",
+			Namespace: cluster.Namespace,
 		},
 		Spec: corev1alpha1.PackageSpec{
 			Image: c.image,
@@ -100,10 +108,8 @@ func (c *HostedClusterController) desiredPackage(cluster *HostedCluster) *corev1
 }
 
 func (c *HostedClusterController) SetupWithManager(mgr ctrl.Manager) error {
-	hostedCluster := newHostedCluster().ClientObject()
-
 	return ctrl.NewControllerManagedBy(mgr).
-		For(hostedCluster).
+		For(&HostedCluster{}).
 		Owns(&corev1alpha1.Package{}).
 		Complete(c)
 }

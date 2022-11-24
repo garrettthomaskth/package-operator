@@ -926,6 +926,13 @@ func (Generate) code() error {
 		return fmt.Errorf("generating deep copy methods: %w", err)
 	}
 
+	// code gen
+	codeHostedClusterCmd := exec.Command("controller-gen", "object", "paths=./...")
+	codeHostedClusterCmd.Dir = workDir + "/internal/controllers/hostedclusters"
+	if err := codeHostedClusterCmd.Run(); err != nil {
+		return fmt.Errorf("generating deep copy methods for hosted cluster: %w", err)
+	}
+
 	crds, err := filepath.Glob("config/crds/*.yaml")
 	if err != nil {
 		return fmt.Errorf("finding CRDs: %w", err)

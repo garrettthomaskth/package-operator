@@ -8,6 +8,7 @@ import (
 	"net/http"
 	"net/http/pprof"
 	"os"
+	"package-operator.run/package-operator/internal/controllers/hostedclusters/hypershift/v1alpha1"
 	"runtime/debug"
 	"strings"
 	"time"
@@ -87,7 +88,7 @@ func main() {
 	if err := pkoapis.AddToScheme(scheme); err != nil {
 		panic(err)
 	}
-	if err := hostedclusters.AddToScheme(scheme); err != nil {
+	if err := v1alpha1.AddToScheme(scheme); err != nil {
 		panic(err)
 	}
 

@@ -1,4 +1,9 @@
-package hostedclusters
+// The package v1alpha1 contains API Schema definitions for the v1alpha1 version of the core Package Operator API group,
+// containing basic building blocks that other auxiliary APIs can build on top of.
+// TODO: CHange description
+// +kubebuilder:object:generate=true
+// +groupName=hypershift.openshift.io
+package v1alpha1
 
 // Take only what we need from https://github.com/openshift/hypershift/blob/main/api/v1alpha1/hostedcluster_types.go
 import (
@@ -10,7 +15,7 @@ import (
 
 var (
 	// GroupVersion is group version used to register these objects.
-	GroupVersion = schema.GroupVersion{Group: "package-operator.run", Version: "v1alpha1"}
+	GroupVersion = schema.GroupVersion{Group: "hypershift.openshift.io", Version: "v1alpha1"}
 
 	// SchemeBuilder is used to add go types to the GroupVersionKind scheme.
 	SchemeBuilder = &scheme.Builder{GroupVersion: GroupVersion}

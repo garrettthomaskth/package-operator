@@ -928,7 +928,7 @@ func (Generate) code() error {
 
 	// code gen
 	codeHostedClusterCmd := exec.Command("controller-gen", "object", "paths=./...")
-	codeHostedClusterCmd.Dir = workDir + "/internal/controllers/hostedclusters"
+	codeHostedClusterCmd.Dir = workDir + "/internal/controllers/hostedclusters/hypershift/v1alpha1"
 	if err := codeHostedClusterCmd.Run(); err != nil {
 		return fmt.Errorf("generating deep copy methods for hosted cluster: %w", err)
 	}

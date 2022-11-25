@@ -3,7 +3,7 @@ package hostedclusters
 import (
 	"context"
 	"fmt"
-
+	"package-operator.run/package-operator/internal/controllers/hostedclusters/hypershift/v1alpha1"
 	"sigs.k8s.io/controller-runtime/pkg/controller/controllerutil"
 
 	"github.com/go-logr/logr"
@@ -40,14 +40,13 @@ func (c *HostedClusterController) Reconcile(
 	log := c.log.WithValues("HostedCluster", req.String())
 	defer log.Info("reconciled")
 	ctx = logr.NewContext(ctx, log)
-	hostedCluster := &HostedCluster{}
+	hostedCluster := &v1alpha1.HostedCluster{}
 	if err := c.client.Get(ctx, req.NamespacedName, hostedCluster); err != nil {
 		// Ignore not found errors on delete
 		return ctrl.Result{}, client.IgnoreNotFound(err)
 	}
 
-	conds := hostedCluster.Status.Conditions
-	ok := isHostedClusterReady(conds)
+	ok := isHostedClusterReady(hostedCluster)
 	if !ok {
 		return ctrl.Result{}, nil
 	}
@@ -63,6 +62,7 @@ func (c *HostedClusterController) Reconcile(
 		if err := c.client.Create(ctx, desiredPkg); err != nil {
 			return ctrl.Result{}, fmt.Errorf("creating Package: %w", err)
 		}
+		return ctrl.Result{}, nil
 	} else if err != nil {
 		return ctrl.Result{}, fmt.Errorf("getting Package: %w", err)
 	}
@@ -80,8 +80,10 @@ func (c *HostedClusterController) Reconcile(
 	return ctrl.Result{}, nil
 }
 
-func isHostedClusterReady(conds []metav1.Condition) bool {
+func isHostedClusterReady(hc *v1alpha1.HostedCluster) bool {
 	ready := false
+
+	conds := hc.Status.Conditions
 	for _, cond := range conds {
 		// TODO: is this the condition we want to check?
 		if cond.Type == "Available" {
@@ -94,7 +96,7 @@ func isHostedClusterReady(conds []metav1.Condition) bool {
 	return ready
 }
 
-func (c *HostedClusterController) desiredPackage(cluster *HostedCluster) *corev1alpha1.Package {
+func (c *HostedClusterController) desiredPackage(cluster *v1alpha1.HostedCluster) *corev1alpha1.Package {
 	pkg := &corev1alpha1.Package{
 		ObjectMeta: metav1.ObjectMeta{
 			Name:      cluster.Name + "_remote_phase_manager",
@@ -109,7 +111,7 @@ func (c *HostedClusterController) desiredPackage(cluster *HostedCluster) *corev1
 
 func (c *HostedClusterController) SetupWithManager(mgr ctrl.Manager) error {
 	return ctrl.NewControllerManagedBy(mgr).
-		For(&HostedCluster{}).
+		For(&v1alpha1.HostedCluster{}).
 		Owns(&corev1alpha1.Package{}).
 		Complete(c)
 }

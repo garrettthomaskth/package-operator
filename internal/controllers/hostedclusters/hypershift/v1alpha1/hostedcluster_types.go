@@ -26,6 +26,17 @@ func init() {
 	SchemeBuilder.Register(&HostedCluster{}, &HostedClusterList{})
 }
 
+// More conditions at https://github.com/openshift/hypershift/blob/main/api/v1alpha1/conditions.go
+// HostedCluster conditions.
+const (
+	// HostedClusterAvailable indicates whether the HostedCluster has a healthy
+	// control plane.
+	HostedClusterAvailable = "Available"
+
+	// InfrastructureReady bubbles up the same condition from HCP.
+	InfrastructureReady = "InfrastructureReady"
+)
+
 // HostedClusterStatus is the latest observed status of a HostedCluster.
 type HostedClusterStatus struct {
 

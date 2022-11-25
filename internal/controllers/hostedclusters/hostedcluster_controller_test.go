@@ -48,23 +48,23 @@ func TestHostedClusterController_Reconcile(t *testing.T) {
 		},
 		{
 			name:        "hostedcluster unavailable",
-			hcCondition: metav1.Condition{Type: "Available", Status: "False"},
+			hcCondition: metav1.Condition{Type: v1alpha1.HostedClusterAvailable, Status: "False"},
 		},
 		{
 			name:         "no existing package",
-			hcCondition:  metav1.Condition{Type: "Available", Status: "True"},
+			hcCondition:  metav1.Condition{Type: v1alpha1.HostedClusterAvailable, Status: metav1.ConditionTrue},
 			pkgGetReturn: errors.NewNotFound(schema.GroupResource{}, ""),
 			pkgImage:     "image",
 		},
 		{
 			name:             "existing package with same image",
-			hcCondition:      metav1.Condition{Type: "Available", Status: "True"},
+			hcCondition:      metav1.Condition{Type: v1alpha1.HostedClusterAvailable, Status: metav1.ConditionTrue},
 			pkgImage:         "same-image",
 			existingPkgImage: "same-image",
 		},
 		{
 			name:             "existing package with different image",
-			hcCondition:      metav1.Condition{Type: "Available", Status: "True"},
+			hcCondition:      metav1.Condition{Type: v1alpha1.HostedClusterAvailable, Status: metav1.ConditionTrue},
 			pkgImage:         "image",
 			existingPkgImage: "different-image",
 		},
@@ -124,7 +124,7 @@ func TestHostedClusterController_Reconcile(t *testing.T) {
 				clientMock.AssertNotCalled(t, "Delete", mock.Anything, mock.Anything, mock.Anything)
 			}
 
-			if test.hcCondition.Status == "True" && test.pkgGetReturn == nil {
+			if test.hcCondition.Status == metav1.ConditionTrue && test.pkgGetReturn == nil {
 				clientMock.AssertNumberOfCalls(t, "Get", 2)
 				if test.pkgImage == test.existingPkgImage {
 					clientMock.AssertNotCalled(t, "Delete", mock.Anything, mock.Anything, mock.Anything)
@@ -148,12 +148,12 @@ func TestIsHostedClusterReady(t *testing.T) {
 	}{
 		{
 			name:  "Available condition true",
-			cond:  metav1.Condition{Type: "Available", Status: "True"},
+			cond:  metav1.Condition{Type: v1alpha1.HostedClusterAvailable, Status: metav1.ConditionTrue},
 			ready: true,
 		},
 		{
 			name:  "Available condition true",
-			cond:  metav1.Condition{Type: "Available", Status: "False"},
+			cond:  metav1.Condition{Type: v1alpha1.HostedClusterAvailable, Status: metav1.ConditionFalse},
 			ready: false,
 		},
 		{

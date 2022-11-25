@@ -87,9 +87,8 @@ func isHostedClusterReady(hc *v1alpha1.HostedCluster) bool {
 
 	conds := hc.Status.Conditions
 	for _, cond := range conds {
-		// TODO: is this the condition we want to check?
-		if cond.Type == "Available" {
-			if cond.Status == "True" {
+		if cond.Type == v1alpha1.HostedClusterAvailable {
+			if cond.Status == metav1.ConditionTrue {
 				ready = true
 			}
 			break

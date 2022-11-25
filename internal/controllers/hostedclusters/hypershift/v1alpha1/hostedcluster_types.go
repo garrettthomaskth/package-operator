@@ -1,11 +1,9 @@
-// The package v1alpha1 contains API Schema definitions for the v1alpha1 version of the core Package Operator API group,
-// containing basic building blocks that other auxiliary APIs can build on top of.
-// TODO: CHange description
+// The package v1alpha1 contains some API Schema definitions for the v1alpha1 version of some Hypershift API group.
+// Took only what we needed from https://github.com/openshift/hypershift/blob/main/api/v1alpha1/hostedcluster_types.go
 // +kubebuilder:object:generate=true
 // +groupName=hypershift.openshift.io
 package v1alpha1
 
-// Take only what we need from https://github.com/openshift/hypershift/blob/main/api/v1alpha1/hostedcluster_types.go
 import (
 	corev1 "k8s.io/api/core/v1"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
@@ -71,7 +69,7 @@ type HostedCluster struct {
 }
 
 // +kubebuilder:object:root=true
-// HostedClusterList contains a list of HostedCluster
+// HostedClusterList contains a list of HostedCluster.
 type HostedClusterList struct {
 	metav1.TypeMeta `json:",inline"`
 	metav1.ListMeta `json:"metadata,omitempty"`

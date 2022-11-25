@@ -3,8 +3,10 @@ package hostedclusters
 import (
 	"context"
 	"fmt"
-	"package-operator.run/package-operator/internal/controllers/hostedclusters/hypershift/v1alpha1"
+
 	"sigs.k8s.io/controller-runtime/pkg/controller/controllerutil"
+
+	"package-operator.run/package-operator/internal/controllers/hostedclusters/hypershift/v1alpha1"
 
 	"github.com/go-logr/logr"
 	"k8s.io/apimachinery/pkg/api/errors"

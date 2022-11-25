@@ -8,10 +8,11 @@ import (
 	"net/http"
 	"net/http/pprof"
 	"os"
-	"package-operator.run/package-operator/internal/controllers/hostedclusters/hypershift/v1alpha1"
 	"runtime/debug"
 	"strings"
 	"time"
+
+	"package-operator.run/package-operator/internal/controllers/hostedclusters/hypershift/v1alpha1"
 
 	"github.com/go-logr/logr"
 	batchv1 "k8s.io/api/batch/v1"

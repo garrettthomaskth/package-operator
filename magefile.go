@@ -668,7 +668,7 @@ func getImageName(name string) string {
 	envVar := strings.ToUpper(name) + "_IMAGE"
 
 	var image string
-	if len(os.Getenv(envVar)) > 0 { // TODO: Should this take precedence?
+	if len(os.Getenv(envVar)) > 0 {
 		image = os.Getenv(envVar)
 	} else if len(os.Getenv("USE_DIGESTS")) > 0 {
 		mg.Deps(
@@ -926,7 +926,7 @@ func (Generate) code() error {
 		return fmt.Errorf("generating deep copy methods: %w", err)
 	}
 
-	// code gen
+	// code gen of deepcopy methods for HostedCluster
 	codeHostedClusterCmd := exec.Command("controller-gen", "object", "paths=./...")
 	codeHostedClusterCmd.Dir = workDir + "/internal/controllers/hostedclusters/hypershift/v1alpha1"
 	if err := codeHostedClusterCmd.Run(); err != nil {
@@ -1144,7 +1144,6 @@ func includeInPackageOperatorPackage(file string) error {
 			if err != nil {
 				return err
 			}
-			// deploy.SetGroupVersionKind(schema.GroupVersionKind{Group: "apps", Version: "v1", Kind: "Deployment"})
 			objToMarshal = deploy
 		}
 		obj.SetAnnotations(annotations)
@@ -1203,7 +1202,7 @@ func (Generate) RemotePhaseManagerPackage() error {
 	if annotations == nil {
 		annotations = map[string]string{}
 	}
-	annotations["package-operator.run/phase"] = "deploy"
+	annotations["package-operator.run/phase"] = "hosted-control-plane"
 	deployment.SetAnnotations(annotations)
 
 	outFile, err := os.Create("config/packages/remote-phase-manager/remote-phase-manager.Deployment.yaml")

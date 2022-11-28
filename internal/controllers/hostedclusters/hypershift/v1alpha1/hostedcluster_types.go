@@ -1,5 +1,7 @@
 // The package v1alpha1 contains some API Schema definitions for the v1alpha1 version of some Hypershift API group.
-// Took only what we needed from https://github.com/openshift/hypershift/blob/main/api/v1alpha1/hostedcluster_types.go
+// https://github.com/openshift/hypershift does not put its API definitions in a submodule, so we took what we needed
+// from https://github.com/openshift/hypershift/blob/main/api/v1alpha1/hostedcluster_types.go to avoid having to
+// import all of Hypershift.
 // +kubebuilder:object:generate=true
 // +groupName=hypershift.openshift.io
 package v1alpha1
@@ -32,9 +34,6 @@ const (
 	// HostedClusterAvailable indicates whether the HostedCluster has a healthy
 	// control plane.
 	HostedClusterAvailable = "Available"
-
-	// InfrastructureReady bubbles up the same condition from HCP.
-	InfrastructureReady = "InfrastructureReady"
 )
 
 // HostedClusterStatus is the latest observed status of a HostedCluster.
@@ -64,13 +63,6 @@ type HostedClusterStatus struct {
 // NodePool resources.
 //
 // +kubebuilder:object:root=true
-// +kubebuilder:resource:path=hostedclusters,shortName=hc;hcs,scope=Namespaced
-// +kubebuilder:storageversion
-// +kubebuilder:subresource:status
-// +kubebuilder:printcolumn:name="KubeConfig",type="string",JSONPath=".status.kubeconfig.name",description="KubeConfig Secret"
-// +kubebuilder:printcolumn:name="Available",type="string",JSONPath=".status.conditions[?(@.type==\"Available\")].status",description="Available"
-// +kubebuilder:printcolumn:name="Progressing",type="string",JSONPath=".status.conditions[?(@.type==\"Progressing\")].status",description="Progressing"
-// +kubebuilder:printcolumn:name="Message",type="string",JSONPath=".status.conditions[?(@.type==\"Available\")].message",description="Message"
 type HostedCluster struct {
 	metav1.TypeMeta   `json:",inline"`
 	metav1.ObjectMeta `json:"metadata,omitempty"`

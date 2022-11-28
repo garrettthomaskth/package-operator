@@ -6,8 +6,7 @@ spec:
   scopes:
   - Namespaced
   phases:
-  #- name: namespace
-  - name: deploy
+  - name: hosted-control-plane
   availabilityProbes:
   - probes:
     - condition:

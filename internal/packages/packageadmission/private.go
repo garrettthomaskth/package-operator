@@ -30,11 +30,13 @@ type specStandardValidator interface {
 	validate(spec *apiextensions.JSONSchemaProps, fldPath *field.Path) field.ErrorList
 	withForbiddenDefaults(reason string) specStandardValidator
 
-	// insideResourceMeta returns true when validating either TypeMeta or ObjectMeta, from an embedded resource or on the top-level.
+	// insideResourceMeta returns true when validating either TypeMeta or ObjectMeta, from an embedded resource or
+	// on the top-level.
 	insideResourceMeta() bool
 	withInsideResourceMeta() specStandardValidator
 
-	// forbidOldSelfValidations returns the path to the first ancestor of the visited path that can't be safely correlated between two revisions of an object, or nil if there is no such path
+	// forbidOldSelfValidations returns the path to the first ancestor of the visited path that can't be safely
+	// correlated between two revisions of an object, or nil if there is no such path
 	forbidOldSelfValidations() *field.Path
 	withForbidOldSelfValidations(path *field.Path) specStandardValidator
 }
@@ -89,7 +91,7 @@ func validateCustomResourceDefinitionValidation(ctx context.Context, customResou
 	}
 
 	// if the status subresource is enabled, only certain fields are allowed inside the root schema.
-	// these fields are chosen such that, if status is extracted as properties["status"], it's validation is not lost.
+	// these fields are chosen such that, if status is extracted as properties["status"], its validation is not lost.
 	if statusSubresourceEnabled {
 		if err := statusSubresource(schema, fldPath); err != nil {
 			allErrs = append(allErrs, err)
@@ -110,7 +112,7 @@ func validateCustomResourceDefinitionValidation(ctx context.Context, customResou
 	var structuralSchemaInitErrs field.ErrorList
 	if opts.requireStructuralSchema {
 		var extraAllErrs field.ErrorList
-		celContext, structuralSchemaInitErrs, extraAllErrs = requirestructuralSchema(ctx, schema, opts, fldPath)
+		celContext, structuralSchemaInitErrs, extraAllErrs = requireStructuralSchema(ctx, schema, opts, fldPath)
 		allErrs = append(allErrs, extraAllErrs...)
 	}
 	allErrs = append(allErrs, validateCustomResourceDefinitionOpenAPISchema(schema, fldPath.Child("openAPIV3Schema"), openAPIV3Schema, true, &opts, celContext).allErrors()...)
@@ -168,7 +170,7 @@ func statusSubresource(schema *apiextensions.JSONSchemaProps, fldPath *field.Pat
 	return nil
 }
 
-func requirestructuralSchema(ctx context.Context, schema *apiextensions.JSONSchemaProps, opts validationOptions, fldPath *field.Path) (*apiextensionsvalidation.CELSchemaContext, field.ErrorList, field.ErrorList) {
+func requireStructuralSchema(ctx context.Context, schema *apiextensions.JSONSchemaProps, opts validationOptions, fldPath *field.Path) (*apiextensionsvalidation.CELSchemaContext, field.ErrorList, field.ErrorList) {
 	ss, err := structuralschema.NewStructural(schema)
 	if err != nil {
 		// These validation errors overlap with  OpenAPISchema validation errors so we keep track of them
